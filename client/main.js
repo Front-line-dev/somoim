@@ -9,23 +9,6 @@ const emptyStream = document.createElement('canvas').captureStream()
 qs('#join-button').addEventListener('click', () => {
     qs('main').classList.add('hidden-div')
     qs('.client').classList.remove('hidden-div')
-
-    // Receive call
-    // peer.on('call', (connection) => {
-    //     console.log('answered back')
-    //     const video = qs('#client-video')
-
-    //     connection.on('stream', (stream) => {
-    //         video.srcObject = stream
-    //         video.addEventListener('loadedmetadata', () => {
-    //             video.play()
-    //         })
-    //     })
-
-    //     connection.on('close', () => {
-    //         video.remove()
-    //     })
-    // })
 })
 
 qs('#connect-form').addEventListener('submit', async (e) => {
@@ -63,9 +46,9 @@ qs('#select-screen-button').addEventListener('click', async () => {
         video: {
             width: 1920,
             height: 1080,
-            frameRate: 60
+            frameRate: 60,
         },
-        audio: true
+        audio: false
     })
 
     const video = qs('#host-video')
