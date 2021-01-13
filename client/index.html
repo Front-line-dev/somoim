@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>somoim (alpha)</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/peerjs@1.3.1/dist/peerjs.min.js" defer></script>
     <script src="main.js" defer></script>
 </head>
 <body>
@@ -17,15 +18,15 @@
         </button>
     </main>
     <div class="client hidden-div">
-        <form action="">
+        <form id="connect-form">
             <input type="text" name="host-id-input" id="host-id-input">
             <button type="submit">connect</button>
         </form>
-        <video src=""></video>
+        <video id="client-video" src=""></video>
     </div>
     <div class="host hidden-div">
-        <video src=""></video>
-        <button type="button">select screen</button>
+        <video id="host-video" src=""></video>
+        <button type="button" id="select-screen-button">select screen</button>
         <ul id="client-list">
         </ul>
     </div>
