@@ -44,8 +44,8 @@ qs('#select-screen-button').addEventListener('click', async () => {
 
     const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-            width: 1920,
-            height: 1080,
+            width: 1280,
+            height: 720,
             frameRate: 60,
         },
         audio: false
