@@ -9,10 +9,13 @@ import { joinRoom as joinTrysteroRoom } from 'trystero';
 
 type TransferItem = { id: string; name: string; path: string; size: number; sent: number; status: string };
 type FileWithPath = File & { webkitRelativePath?: string };
-type TransferMessage = { type: 'file-start'; item: TransferItem } | { type: 'file-end'; id: string } | ArrayBuffer;
+type BinaryChunk = ArrayBuffer | ArrayBufferView;
+type TransferMessage = { type: 'file-start'; item: TransferItem } | { type: 'file-end'; id: string } | BinaryChunk;
+type ChunkMetadata = { type: 'chunk'; id: string; offset: number };
 type SomoimRoom = ReturnType<typeof joinTrysteroRoom>;
 
-const CHUNK_SIZE = 64 * 1024;
+const CHUNK_SIZE = 2 * 1024 * 1024;
+const MAX_IN_FLIGHT_CHUNKS = 16;
 
 function roomCode() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
@@ -29,6 +32,22 @@ function formatBytes(bytes: number) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   const power = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / 1024 ** power).toFixed(power > 1 ? 1 : 0)} ${units[power]}`;
+}
+
+function isBinaryChunk(value: TransferMessage): value is BinaryChunk {
+  return value instanceof ArrayBuffer || ArrayBuffer.isView(value);
+}
+
+function toArrayBuffer(value: BinaryChunk) {
+  if (value instanceof ArrayBuffer) return value;
+  return new Uint8Array(value.buffer, value.byteOffset, value.byteLength).slice().buffer;
+}
+
+function isChunkMetadata(value: unknown): value is ChunkMetadata {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const metadata = value as Partial<ChunkMetadata>;
+  return metadata.type === 'chunk' && typeof metadata.id === 'string' &&
+    Number.isSafeInteger(metadata.offset) && Number(metadata.offset) >= 0;
 }
 
 async function directoryFile(root: FileSystemDirectoryHandle, relativePath: string) {
@@ -57,12 +76,13 @@ export default function Home() {
   const remoteVideo = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const session = useRef<SomoimRoom | null>(null);
-  const sendTransfer = useRef<((data: TransferMessage) => Promise<void>) | null>(null);
+  const sendTransfer = useRef<((data: TransferMessage, metadata?: ChunkMetadata) => Promise<void>) | null>(null);
   const saveDirectoryRef = useRef<FileSystemDirectoryHandle | null>(null);
   const receiving = useRef<{
     meta: TransferItem;
     writable: FileSystemWritableFileStream | null;
-    chunks: BlobPart[];
+    chunks: Map<number, ArrayBuffer>;
+    receivedOffsets: Set<number>;
     received: number;
   } | null>(null);
 
@@ -92,20 +112,30 @@ export default function Home() {
     );
     session.current = roomSession;
     const transfer = roomSession.makeAction<TransferMessage>('transfer');
-    sendTransfer.current = (data) => transfer.send(data);
+    sendTransfer.current = (data, metadata) => transfer.send(data, metadata ? { metadata } : undefined);
     let incomingQueue = Promise.resolve();
-    const processIncoming = async (data: TransferMessage) => {
-      if (!(data instanceof ArrayBuffer)) {
+    const processIncoming = async (data: TransferMessage, metadata?: unknown) => {
+      if (!isBinaryChunk(data)) {
         if (data.type === 'file-start') {
           const writable = saveDirectoryRef.current ? await directoryFile(saveDirectoryRef.current, data.item.path) : null;
-          receiving.current = { meta: data.item, writable, chunks: [], received: 0 };
+          receiving.current = { meta: data.item, writable, chunks: new Map(), receivedOffsets: new Set(), received: 0 };
           setTransfers((items) => [...items.filter((item) => item.id !== data.item.id), { ...data.item, status: '받는 중' }]);
         }
-        if (data.type === 'file-end' && receiving.current) {
+        if (data.type === 'file-end' && receiving.current?.meta.id === data.id) {
           const active = receiving.current;
+          if (active.received !== active.meta.size) {
+            await active.writable?.abort();
+            setTransfers((items) => items.map((item) => item.id === active.meta.id ? { ...item, status: '전송 오류' } : item));
+            setMessage('파일 일부가 도착하지 않아 저장을 중단했습니다. 다시 전송해주세요.');
+            receiving.current = null;
+            return;
+          }
           if (active.writable) await active.writable.close();
           else {
-            const blobUrl = URL.createObjectURL(new Blob(active.chunks));
+            const orderedChunks = [...active.chunks.entries()]
+              .sort(([left], [right]) => left - right)
+              .map(([, chunk]) => chunk);
+            const blobUrl = URL.createObjectURL(new Blob(orderedChunks));
             const anchor = document.createElement('a');
             anchor.href = blobUrl;
             anchor.download = active.meta.name;
@@ -118,14 +148,18 @@ export default function Home() {
         return;
       }
       const active = receiving.current;
-      if (!active) return;
-      if (active.writable) await active.writable.write(data);
-      else active.chunks.push(data);
-      active.received += data.byteLength;
+      if (!active || !isChunkMetadata(metadata) || metadata.id !== active.meta.id ||
+        metadata.offset + data.byteLength > active.meta.size || active.receivedOffsets.has(metadata.offset)) return;
+      const chunk = toArrayBuffer(data);
+      if (active.writable) {
+        await active.writable.write({ type: 'write', position: metadata.offset, data: chunk });
+      } else active.chunks.set(metadata.offset, chunk);
+      active.receivedOffsets.add(metadata.offset);
+      active.received += chunk.byteLength;
       setTransfers((items) => items.map((item) => item.id === active.meta.id ? { ...item, sent: active.received } : item));
     };
-    transfer.onMessage = (data) => {
-      incomingQueue = incomingQueue.then(() => processIncoming(data)).catch(() => {
+    transfer.onMessage = (data, { metadata }) => {
+      incomingQueue = incomingQueue.then(() => processIncoming(data, metadata)).catch(() => {
         setMessage('파일을 기록하는 중 오류가 발생했습니다. 저장 공간과 권한을 확인해주세요.');
       });
     };
@@ -246,14 +280,21 @@ export default function Home() {
       const item: TransferItem = { id, name: file.name, path: file.webkitRelativePath || file.name, size: file.size, sent: 0, status: '보내는 중' };
       setTransfers((items) => [...items, item]);
       await send({ type: 'file-start', item });
-      for (let offset = 0; offset < file.size; offset += CHUNK_SIZE) {
-        const buffer = await file.slice(offset, offset + CHUNK_SIZE).arrayBuffer();
-        await send(buffer);
-        totalSent += buffer.byteLength;
-        const sent = Math.min(offset + buffer.byteLength, file.size);
-        setTransfers((items) => items.map((entry) => entry.id === id ? { ...entry, sent } : entry));
-        setSpeed(`${formatBytes(totalSent / Math.max((performance.now() - started) / 1000, 0.1))}/s`);
-      }
+      let nextOffset = 0;
+      let fileSent = 0;
+      const workers = Array.from({ length: Math.min(MAX_IN_FLIGHT_CHUNKS, Math.ceil(file.size / CHUNK_SIZE)) }, async () => {
+        while (nextOffset < file.size) {
+          const offset = nextOffset;
+          nextOffset += CHUNK_SIZE;
+          const buffer = await file.slice(offset, Math.min(offset + CHUNK_SIZE, file.size)).arrayBuffer();
+          await send(buffer, { type: 'chunk', id, offset });
+          fileSent += buffer.byteLength;
+          totalSent += buffer.byteLength;
+          setTransfers((items) => items.map((entry) => entry.id === id ? { ...entry, sent: fileSent } : entry));
+          setSpeed(`${formatBytes(totalSent / Math.max((performance.now() - started) / 1000, 0.1))}/s`);
+        }
+      });
+      await Promise.all(workers);
       await send({ type: 'file-end', id });
       setTransfers((items) => items.map((entry) => entry.id === id ? { ...entry, sent: entry.size, status: '완료' } : entry));
     }
@@ -321,7 +362,7 @@ export default function Home() {
                 <input id="folder-picker" type="file" multiple className="hidden" onChange={addFiles} {...({ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>)} />
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/60 px-4 py-3">
-                <div><p className="text-sm font-semibold">{files.length ? `${files.length}개 항목 선택됨` : '전송할 항목을 선택하세요'}</p><p className="text-xs text-muted-foreground">{files.length ? formatBytes(totalSize) : '파일은 64KB 조각으로 나누어 안전하게 전송됩니다.'}</p></div>
+                <div><p className="text-sm font-semibold">{files.length ? `${files.length}개 항목 선택됨` : '전송할 항목을 선택하세요'}</p><p className="text-xs text-muted-foreground">{files.length ? formatBytes(totalSize) : '2MB 조각을 최대 16개까지 병렬 전송해 P2P 대역폭을 활용합니다.'}</p></div>
                 <button className="button-primary disabled:opacity-40" disabled={!files.length || status !== 'connected'} onClick={sendFiles}><Send size={16} /> 전송 시작</button>
               </div>
               {transfers.length > 0 && <div className="mt-4 space-y-2">{transfers.slice(-5).map((item) => <div key={item.id} className="transfer-row"><div className="min-w-0 flex-1"><div className="flex justify-between gap-4 text-xs"><span className="truncate font-medium">{item.path}</span><span className="shrink-0 text-muted-foreground">{item.status}</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-cyan-500 transition-[width]" style={{ width: `${item.size ? Math.min(100, item.sent / item.size * 100) : 100}%` }} /></div></div><span className="w-20 text-right text-xs text-muted-foreground">{formatBytes(item.sent)}</span></div>)}</div>}
