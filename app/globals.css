@@ -1,0 +1,74 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --radius-sm: calc(var(--radius) * .65);
+  --radius-md: calc(var(--radius) * .85);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.25);
+}
+
+:root {
+  --background: oklch(0.975 0.006 235);
+  --foreground: oklch(0.22 0.035 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.035 250);
+  --primary: oklch(0.48 0.12 218);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.94 0.015 225);
+  --secondary-foreground: oklch(0.28 0.04 245);
+  --muted: oklch(0.95 0.009 230);
+  --muted-foreground: oklch(0.52 0.025 242);
+  --border: oklch(0.89 0.016 235);
+  --input: oklch(0.89 0.016 235);
+  --ring: oklch(0.65 0.13 210);
+  --radius: .8rem;
+}
+
+* { @apply border-border outline-ring/50; }
+html { @apply font-sans; }
+body { @apply bg-background text-foreground; font-family: var(--font-geist-sans), Arial, sans-serif; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+@layer components {
+  .panel { @apply rounded-[15px] border border-border bg-card shadow-[0_12px_35px_rgb(15_35_55/5%)]; }
+  .panel-head { @apply flex items-center justify-between border-b border-border px-5 py-4; }
+  .panel-head h2 { @apply text-[15px] font-bold tracking-tight; }
+  .eyebrow { @apply mb-0.5 text-[10px] font-bold uppercase tracking-[.14em] text-cyan-700; }
+  .feature-pill { @apply flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-2; }
+  .device-tag { @apply flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5; }
+  .button-primary { @apply inline-flex items-center gap-2 rounded-lg bg-[#087d9b] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_6px_18px_rgb(8_125_155/18%)] transition hover:bg-[#066b85] focus-visible:ring-2 focus-visible:ring-cyan-500; }
+  .button-secondary { @apply inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-semibold transition hover:bg-muted; }
+  .button-danger { @apply inline-flex items-center gap-2 rounded-lg bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100; }
+  .icon-button { @apply grid size-10 shrink-0 place-items-center rounded-lg border border-border bg-white text-cyan-800 transition hover:bg-cyan-50; }
+  .select-card { @apply flex items-center gap-3 rounded-xl border border-border p-4 text-left transition hover:border-cyan-500/50 hover:bg-cyan-50/50; }
+  .select-card > span { @apply grid size-10 shrink-0 place-items-center rounded-lg bg-cyan-50 text-cyan-700; }
+  .select-card b, .select-card small { @apply block; }
+  .select-card b { @apply text-sm; }
+  .select-card small { @apply mt-0.5 text-xs text-muted-foreground; }
+  .transfer-row { @apply flex items-center gap-3 rounded-lg border border-border px-3 py-3; }
+  .status-box { @apply flex gap-2.5 rounded-xl bg-slate-100 px-3.5 py-3 text-xs leading-5 text-slate-600; }
+  .status-error { @apply bg-rose-50 text-rose-700; }
+  .stat { @apply rounded-lg bg-muted/60 p-3; }
+  .stat small, .stat b { @apply block; }
+  .stat small { @apply text-[10px] text-muted-foreground; }
+  .stat b { @apply mt-1 text-xs; }
+}
+
