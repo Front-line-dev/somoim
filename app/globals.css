@@ -1,6 +1,4 @@
 @import 'tailwindcss';
-@import 'tw-animate-css';
-@import 'shadcn/tailwind.css';
 
 @theme inline {
   --color-background: var(--background);
@@ -71,4 +69,3 @@ button:disabled { cursor: not-allowed; }
   .stat small { @apply text-[10px] text-muted-foreground; }
   .stat b { @apply mt-1 text-xs; }
 }
-
